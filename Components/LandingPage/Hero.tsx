@@ -102,21 +102,12 @@ const navigationItems: NavItem[] = [
   },
 ];
 
-// Client-only component to avoid hydration mismatch
-const ClientOnly: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-  if (!mounted) return null;
-  return <>{children}</>;
-};
-
 export default function LandingPage() {
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginMessage, setLoginMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -131,13 +122,21 @@ export default function LandingPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Check if user is already logged in
+  useEffect(() => {
+    const accessToken = localStorage.getItem('access_token');
+    if (accessToken) {
+      // Optionally verify token validity or redirect
+      console.log('User already has a session');
+    }
+  }, []);
+
   // Global interaction listener to unmute video
   useEffect(() => {
     const handleFirstInteraction = () => {
       if (!videoUnmuted) {
         const iframe = document.getElementById('hero-video') as HTMLIFrameElement;
         if (iframe && iframe.contentWindow) {
-          // YouTube API postMessage to unmute
           iframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
           iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
           setVideoUnmuted(true);
@@ -165,32 +164,74 @@ export default function LandingPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginMessage(null);
+    setIsLoading(true);
     
     if (!loginEmail || !loginPassword) {
       setLoginMessage({ type: 'error', text: 'Please enter both email and password' });
+      setIsLoading(false);
       return;
     }
 
     try {
-      const response = await api.post('accounts/login/', {
+      // Correct endpoint - using the full path as defined in your API setup
+      const response = await api.post('v1/accounts/login/', {
         email: loginEmail,
         password: loginPassword,
       });
 
       const { message, tokens, account } = response.data;
 
+      // Validate response structure
+      if (!tokens || !tokens.access || !tokens.refresh) {
+        throw new Error('Invalid response from server');
+      }
+
       // Save session data to localStorage
       localStorage.setItem('access_token', tokens.access);
       localStorage.setItem('refresh_token', tokens.refresh);
       localStorage.setItem('user_account', JSON.stringify(account));
+      
+      // Also store user email for convenience
+      localStorage.setItem('user_email', loginEmail);
 
       setLoginMessage({ type: 'success', text: message + ' Redirecting to dashboard...' });
+      
+      // Clear form fields
+      setLoginEmail("");
+      setLoginPassword("");
+      
+      // Redirect after a short delay to show success message
       setTimeout(() => {
         window.location.href = '/dashboard';
       }, 1500);
+      
     } catch (error: any) {
-      const errorMsg = error.response?.data?.message || 'Invalid email or password. Please try again.';
-      setLoginMessage({ type: 'error', text: errorMsg });
+      console.error("Login attempt failed:", error);
+      
+      // Handle different error scenarios
+      if (error.response) {
+        // Server responded with error status
+        const status = error.response.status;
+        const errorData = error.response.data;
+        
+        if (status === 401) {
+          setLoginMessage({ type: 'error', text: 'Invalid email or password. Please try again.' });
+        } else if (status === 400) {
+          setLoginMessage({ type: 'error', text: errorData.message || errorData.detail || 'Please check your input and try again.' });
+        } else if (status === 500) {
+          setLoginMessage({ type: 'error', text: 'Server error. Please try again later.' });
+        } else {
+          setLoginMessage({ type: 'error', text: errorData?.message || errorData?.detail || 'Login failed. Please try again.' });
+        }
+      } else if (error.request) {
+        // Request was made but no response received
+        setLoginMessage({ type: 'error', text: 'Cannot connect to server. Please check your internet connection.' });
+      } else {
+        // Something else happened
+        setLoginMessage({ type: 'error', text: error.message || 'An unexpected error occurred. Please try again.' });
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1074,6 +1115,7 @@ export default function LandingPage() {
                   setLoginMessage(null);
                   setLoginEmail("");
                   setLoginPassword("");
+                  setIsLoading(false);
                 }}
                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
               >
@@ -1083,9 +1125,9 @@ export default function LandingPage() {
             
             {loginMessage && (
               <div className={`mx-6 mt-6 p-3 rounded-lg flex items-center gap-2 ${
-                loginMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                loginMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
               }`}>
-                {loginMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                {loginMessage.type === 'success' ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> : <X className="w-4 h-4 flex-shrink-0" />}
                 <span className="text-sm">{loginMessage.text}</span>
               </div>
             )}
@@ -1098,7 +1140,8 @@ export default function LandingPage() {
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   required
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] outline-none transition text-[#0B1221]"
+                  disabled={isLoading}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] outline-none transition text-[#0B1221] disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="name@company.com"
                 />
               </div>
@@ -1109,7 +1152,8 @@ export default function LandingPage() {
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   required
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] outline-none transition text-[#0B1221]"
+                  disabled={isLoading}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] outline-none transition text-[#0B1221] disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="••••••••"
                 />
               </div>
@@ -1122,9 +1166,17 @@ export default function LandingPage() {
               </div>
               <button 
                 type="submit"
-                className="w-full bg-[#D4AF37] hover:bg-[#f5cc45] text-[#0B1221] font-semibold py-3 rounded-xl shadow-md hover:shadow-lg transition-all duration-200"
+                disabled={isLoading}
+                className="w-full bg-[#D4AF37] hover:bg-[#f5cc45] text-[#0B1221] font-semibold py-3 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Sign In
+                {isLoading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-[#0B1221] border-t-transparent rounded-full animate-spin"></div>
+                    Signing In...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
               </button>
               <p className="text-center text-sm text-gray-600">
                 Don't have an account?{" "}

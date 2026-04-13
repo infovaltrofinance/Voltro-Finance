@@ -18,6 +18,13 @@ const Dashboard = () => {
 
   // Set mounted state to true after the first render to avoid hydration mismatch
   useEffect(() => {
+    // Check if user is logged in
+    const accessToken = localStorage.getItem('access_token');
+    if (!accessToken) {
+      window.location.href = '/';
+      return;
+    }
+
     setIsMounted(true);
     
     // Load real user data from localStorage
@@ -79,7 +86,7 @@ const Dashboard = () => {
   const [addCardForm, setAddCardForm] = useState({ number: '', expiry: '', cvv: '', name: '' });
 
   const [isTxDetailOpen, setIsTxDetailOpen] = useState(false);
-  const [selectedTx, setSelectedTx] = useState(null);
+  const [selectedTx, setSelectedTx] = useState<any>(null);
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications] = useState([
@@ -117,7 +124,7 @@ const Dashboard = () => {
   }, [transactions, filterRange]);
 
   // --- SEND MONEY HANDLER ---
-  const handleSendMoney = (e) => {
+  const handleSendMoney = (e: React.FormEvent) => {
     e.preventDefault();
     if (!sendForm.recipient || !sendForm.amount) return;
 
@@ -148,7 +155,7 @@ const Dashboard = () => {
   };
 
   // --- ADD CARD HANDLER ---
-  const handleAddCard = (e) => {
+  const handleAddCard = (e: React.FormEvent) => {
     e.preventDefault();
     if (!addCardForm.number || !addCardForm.expiry) return;
     
@@ -159,7 +166,7 @@ const Dashboard = () => {
   };
 
   // --- SHARED COMPONENTS ---
-  const NavItem = ({ icon, label, id }) => (
+  const NavItem = ({ icon, label, id }: { icon: React.ReactNode; label: string; id: string }) => (
     <button 
       onClick={() => { 
         setCurrentView(id); 
@@ -172,7 +179,7 @@ const Dashboard = () => {
     </button>
   );
 
-  const TransactionRow = ({ tx }) => (
+  const TransactionRow = ({ tx }: { tx: any }) => (
     <div 
       onClick={() => {
         setSelectedTx(tx);
@@ -198,7 +205,7 @@ const Dashboard = () => {
   const fullName = userAccount ? `${userAccount.first_name} ${userAccount.last_name}` : "Alex Valtro";
   const initials = userAccount ? `${userAccount.first_name[0]}${userAccount.last_name[0]}`.toUpperCase() : "AV";
 
-  const ProfileItem = ({ label, value, color = "text-slate-800" }) => (
+  const ProfileItem = ({ label, value, color = "text-slate-800" }: { label: string; value: string; color?: string }) => (
     <div className="space-y-1.5">
       <p className="text-[10px] text-gray-400 uppercase font-black tracking-[0.15em]">{label}</p>
       <p className={`font-bold text-sm lg:text-base ${color}`}>{value}</p>
@@ -218,6 +225,10 @@ const Dashboard = () => {
                 <span className="text-xl font-bold text-gray-400">{userAccount?.currency || '$'}</span>
                 <h3 className="text-4xl font-bold text-[#0B1221] mt-1">${isMounted ? balance.toLocaleString(undefined, {minimumFractionDigits: 2}) : ''}</h3>
               </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <p className="text-xs font-mono text-gray-500 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">Acc: {userAccount?.account_number || 'N/A'}</p>
+                <span className="text-[10px] font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-1 rounded-md uppercase tracking-wider">{userAccount?.account_type?.name || 'Standard'}</span>
+              </div>
             </div>
             <div className="bg-green-50 text-green-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
               <TrendingUp size={14}/> +2.4%
@@ -234,7 +245,7 @@ const Dashboard = () => {
                 </defs>
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 12 }} />
                 <YAxis hide />
-                <Tooltip formatter={(value) => [`$${value.toFixed(2)}`, 'Balance']} />
+                <Tooltip formatter={(value: any) => [`$${Number(value || 0).toFixed(2)}`, 'Balance']} />
                 <Area type="monotone" dataKey="value" stroke="#D4AF37" strokeWidth={3} fill="url(#colorValue)" />
               </AreaChart>
             </ResponsiveContainer>
@@ -386,12 +397,14 @@ const Dashboard = () => {
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-10 gap-x-12 border-t border-gray-50 pt-10">
-        <ProfileItem label="Occupation" value={userAccount?.occupation || "N/A"} />
-        <ProfileItem label="Account Status" value={userAccount?.account_status || "Active"} color="text-green-600" />
+        <ProfileItem label="Account Type" value={userAccount?.account_type?.name || "N/A"} color="text-[#D4AF37]" />
+        <ProfileItem label="Account Status" value={userAccount?.account_status || "ACTIVE"} color={userAccount?.account_status === 'ACTIVE' ? "text-green-600" : "text-amber-600"} />
         <ProfileItem label="Account Number" value={userAccount?.account_number || "N/A"} />
+        <ProfileItem label="Occupation" value={userAccount?.occupation || "N/A"} />
         <ProfileItem label="Primary Currency" value={userAccount?.currency || "USD"} />
         <ProfileItem label="Source of Funds" value={userAccount?.source_of_funds || "N/A"} />
-        <ProfileItem label="Country" value={userAccount?.country || "USA"} />
+        <ProfileItem label="Annual Income" value={userAccount?.annual_income_range ? `$${parseFloat(userAccount.annual_income_range).toLocaleString()}` : "N/A"} />
+        <ProfileItem label="Country" value={userAccount?.country || "N/A"} />
       </div>
     </div>
   );
@@ -400,7 +413,7 @@ const Dashboard = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
-    const handleChangePassword = (e) => {
+    const handleChangePassword = (e: React.FormEvent) => {
       e.preventDefault();
       if (passwordForm.new !== passwordForm.confirm) {
         alert("New passwords do not match!");
@@ -741,12 +754,12 @@ const Dashboard = () => {
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#D4AF37] to-[#f5e0a3] flex items-center justify-center text-black font-black text-xs">{initials}</div>
           <div className="overflow-hidden">
             <p className="text-sm font-bold truncate">{fullName}</p>
-            <p className="text-[10px] text-gray-500 font-bold uppercase">{userAccount?.account_status || 'Private Tier'}</p>
+            <p className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider">{userAccount?.account_type?.name || 'Standard Account'}</p>
           </div>
           <button 
             onClick={() => {
-              alert("👋 You have been logged out successfully!");
-              // In a real app this would redirect to login
+              localStorage.clear();
+              window.location.href = '/';
             }}
             className="ml-auto text-gray-400 hover:text-red-400 transition-colors"
           >
