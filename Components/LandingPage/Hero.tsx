@@ -26,6 +26,8 @@ import {
   Star,
   Award,
   Sparkles,
+  Cookie,
+  Info
 } from "lucide-react";
 
 // TypeScript interface for feature props
@@ -104,6 +106,10 @@ const navigationItems: NavItem[] = [
 
 export default function LandingPage() {
   const [showLoginForm, setShowLoginForm] = useState(false);
+  const [showOpenAccountForm, setShowOpenAccountForm] = useState(false);
+  const [showCookieConsent, setShowCookieConsent] = useState(false);
+  const [openAccountForm, setOpenAccountForm] = useState({ name: '', email: '', password: '', accountType: 'Savings' });
+  
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginMessage, setLoginMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -120,6 +126,15 @@ export default function LandingPage() {
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Check for cookie consent on mount
+  useEffect(() => {
+    const hasAccepted = localStorage.getItem('cookies_accepted');
+    if (!hasAccepted) {
+      const timer = setTimeout(() => setShowCookieConsent(true), 1500);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   // Check if user is already logged in
@@ -235,6 +250,17 @@ export default function LandingPage() {
     }
   };
 
+  // Handle Open Account submission
+  const handleOpenAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setTimeout(() => {
+      setIsLoading(false);
+      alert("Registration successful! Please login to continue.");
+      setShowOpenAccountForm(false);
+    }, 1500);
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Sticky Navigation */}
@@ -299,7 +325,7 @@ export default function LandingPage() {
                 Login
               </button>
               <button
-                onClick={() => scrollToSection('#rates')}
+                onClick={() => setShowOpenAccountForm(true)}
                 className="hidden lg:block bg-[#0B1221] hover:bg-black text-white rounded-full px-6 py-2 text-sm font-semibold shadow-md transition-all"
               >
                 Open Account
@@ -372,7 +398,7 @@ export default function LandingPage() {
               {/* CTA Buttons */}
               <div className="mt-8 flex flex-col sm:flex-row justify-center md:justify-start gap-4 px-6 md:px-0">
                 <button
-                  onClick={() => scrollToSection('#rates')}
+                  onClick={() => setShowOpenAccountForm(true)}
                   className="bg-[#D4AF37] hover:bg-[#f5cc45] text-[#0B1221] font-semibold px-8 py-3 rounded-full shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
                 >
                   Open Account <ArrowRight className="w-4 h-4" />
@@ -471,7 +497,7 @@ export default function LandingPage() {
                   <li className="flex items-center gap-2">✓ Interest calculated daily</li>
                 </ul>
                 <button 
-                  onClick={() => setShowLoginForm(true)}
+                  onClick={() => { setOpenAccountForm({...openAccountForm, accountType: 'Savings'}); setShowOpenAccountForm(true); }}
                   className="w-full mt-8 bg-[#D4AF37] text-[#0B1221] font-semibold py-3 rounded-xl hover:bg-[#f5cc45] transition"
                 >
                   Open Account
@@ -490,7 +516,7 @@ export default function LandingPage() {
                   <li className="flex items-center gap-2">✓ Flexible terms available</li>
                 </ul>
                 <button 
-                  onClick={() => setShowLoginForm(true)}
+                  onClick={() => { setOpenAccountForm({...openAccountForm, accountType: 'Term Deposit'}); setShowOpenAccountForm(true); }}
                   className="w-full mt-8 bg-[#D4AF37] text-[#0B1221] font-semibold py-3 rounded-xl hover:bg-[#f5cc45] transition"
                 >
                   Open Account
@@ -506,7 +532,7 @@ export default function LandingPage() {
                   <li className="flex items-center gap-2">✓ 24/7 customer support</li>
                 </ul>
                 <button 
-                  onClick={() => setShowLoginForm(true)}
+                  onClick={() => { setOpenAccountForm({...openAccountForm, accountType: 'Everyday'}); setShowOpenAccountForm(true); }}
                   className="w-full mt-8 bg-[#D4AF37] text-[#0B1221] font-semibold py-3 rounded-xl hover:bg-[#f5cc45] transition"
                 >
                   Open Account
@@ -1091,7 +1117,7 @@ export default function LandingPage() {
               ))}
             </nav>
             <button
-              onClick={() => { scrollToSection('#rates'); setIsMobileMenuOpen(false); }}
+              onClick={() => { setShowOpenAccountForm(true); setIsMobileMenuOpen(false); }}
               className="w-full bg-[#0B1221] text-white font-bold py-4 rounded-xl shadow-lg shadow-black/10"
             >
               Open Account
@@ -1192,6 +1218,114 @@ export default function LandingPage() {
                 </button>
               </p>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Open Account Modal */}
+      {showOpenAccountForm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="bg-gradient-to-r from-[#D4AF37] to-[#f5cc45] p-6 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold text-[#0B1221]">Create Account</h2>
+                <p className="text-[#0B1221]/70 text-sm mt-1">Join Valtro Trust Finance today</p>
+              </div>
+              <button 
+                onClick={() => setShowOpenAccountForm(false)}
+                className="p-2 hover:bg-black/10 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-[#0B1221]" />
+              </button>
+            </div>
+
+            <form className="p-6 space-y-4" onSubmit={handleOpenAccount}>
+              <div>
+                <label className="block text-sm font-medium text-[#0B1221] mb-1.5">Full Name</label>
+                <input 
+                  type="text" 
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] outline-none"
+                  placeholder="John Doe"
+                  value={openAccountForm.name}
+                  onChange={(e) => setOpenAccountForm({...openAccountForm, name: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#0B1221] mb-1.5">Email Address</label>
+                <input 
+                  type="email" 
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] outline-none"
+                  placeholder="john@example.com"
+                  value={openAccountForm.email}
+                  onChange={(e) => setOpenAccountForm({...openAccountForm, email: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#0B1221] mb-1.5">Password</label>
+                <input 
+                  type="password" 
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] outline-none"
+                  placeholder="••••••••"
+                  value={openAccountForm.password}
+                  onChange={(e) => setOpenAccountForm({...openAccountForm, password: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#0B1221] mb-1.5">Account Type</label>
+                <select 
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] outline-none bg-white"
+                  value={openAccountForm.accountType}
+                  onChange={(e) => setOpenAccountForm({...openAccountForm, accountType: e.target.value})}
+                >
+                  <option value="Savings">Savings Account (5.35%)</option>
+                  <option value="Term Deposit">Term Deposit (5.50%)</option>
+                  <option value="Everyday">Everyday Account (0% Fees)</option>
+                </select>
+              </div>
+              
+              <p className="text-[10px] text-gray-500 leading-tight">
+                By clicking Sign Up, you agree to our Terms, Data Policy and Cookie Policy. You may receive SMS notifications from us.
+              </p>
+
+              <button 
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-[#0B1221] text-white font-semibold py-3 rounded-xl shadow-md hover:bg-black transition-all flex items-center justify-center gap-2"
+              >
+                {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Sign Up Now'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cookie Consent Banner */}
+      {showCookieConsent && (
+        <div className="fixed bottom-0 inset-x-0 z-[200] p-4 sm:p-6 animate-in slide-in-from-bottom-full duration-500">
+          <div className="max-w-5xl mx-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-100 p-5 flex flex-col md:flex-row items-center gap-6">
+            <div className="w-12 h-12 bg-[#D4AF37]/10 rounded-full flex items-center justify-center text-[#D4AF37] flex-shrink-0">
+              <Cookie className="w-6 h-6" />
+            </div>
+            <div className="flex-1 text-center md:text-left">
+              <h4 className="font-bold text-[#0B1221] flex items-center justify-center md:justify-start gap-2">
+                We value your privacy <Info className="w-3 h-3 text-gray-400" />
+              </h4>
+              <p className="text-sm text-gray-600 mt-1">
+                Valtro Trust Finance uses cookies to enhance your browsing experience, serve personalized ads or content, and analyze our traffic. By clicking "Accept All", you consent to our use of cookies.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <button onClick={() => setShowCookieConsent(false)} className="flex-1 md:flex-none px-6 py-2.5 text-sm font-semibold text-gray-500 hover:text-[#0B1221] transition-colors">Decline</button>
+              <button 
+                onClick={() => { localStorage.setItem('cookies_accepted', 'true'); setShowCookieConsent(false); }}
+                className="flex-1 md:flex-none px-8 py-2.5 bg-[#0B1221] text-white text-sm font-bold rounded-xl hover:bg-black transition-all shadow-lg shadow-black/10"
+              >
+                Accept All
+              </button>
+            </div>
           </div>
         </div>
       )}
