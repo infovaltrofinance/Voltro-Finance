@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import {
   Shield,
@@ -118,6 +119,7 @@ export default function LandingPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [videoUnmuted, setVideoUnmuted] = useState(false);
+  const router = useRouter();
 
   // Handle scroll effect for navigation
   useEffect(() => {
@@ -175,7 +177,7 @@ export default function LandingPage() {
     }
   };
 
-  // Handle login submission
+ 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginMessage(null);
@@ -217,7 +219,7 @@ export default function LandingPage() {
       
       // Redirect after a short delay to show success message
       setTimeout(() => {
-        window.location.href = '/dashboard';
+        router.push('/dashboard');
       }, 1500);
       
     } catch (error: any) {

@@ -7,6 +7,7 @@ import {
   Eye, EyeOff, Copy, Check, AlertCircle, Lock, Smartphone, Globe
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import api from '@/lib/api';
 
 const Dashboard = () => {
   // --- STATE MANAGEMENT ---
@@ -15,6 +16,9 @@ const Dashboard = () => {
   const [balance, setBalance] = useState(12450.00);
   const [isMounted, setIsMounted] = useState(false);
   const [userAccount, setUserAccount] = useState<any>(null);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [cards, setCards] = useState<any[]>([]);
+  const [isLoadingCards, setIsLoadingCards] = useState(false);
 
   // Set mounted state to true after the first render to avoid hydration mismatch
   useEffect(() => {
@@ -34,59 +38,81 @@ const Dashboard = () => {
       setUserAccount(parsed);
       setBalance(parseFloat(parsed.balance));
     }
+
+    fetchTransactions();
+    fetchCards();
   }, []);
+
+  const fetchTransactions = async () => {
+    setIsLoadingTransactions(true);
+    try {
+      const response = await api.get('v2/bank/customer/transactions/');
+      
+      // Map API data to UI format
+      const mappedTransactions = response.data.map((tx: any) => {
+        // Determine icon based on type
+        let icon = <ArrowDownCircle size={16}/>;
+        if (tx.transaction_type === 'WITHDRAWAL') icon = <ArrowUpCircle size={16}/>;
+        if (tx.transaction_type === 'TRANSFER') icon = <Send size={16}/>;
+
+        // Parse amount (make negative for outflows if API returns positive values)
+        const rawAmount = parseFloat(tx.amount);
+        const amount = (tx.transaction_type === 'DEPOSIT') ? rawAmount : -rawAmount;
+
+        return {
+          id: tx.transaction_id,
+          type: tx.transaction_type.charAt(0) + tx.transaction_type.slice(1).toLowerCase(),
+          status: tx.status.charAt(0) + tx.status.slice(1).toLowerCase(),
+          amount: amount,
+          date: new Date(tx.created_at),
+          icon: icon,
+          description: tx.description,
+          recipient: tx.recipient_account
+        };
+      });
+
+      setTransactions(mappedTransactions);
+    } catch (error) {
+      console.error("Failed to fetch transactions:", error);
+      // Fallback to empty or keep previous on error
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
+  
+  const fetchCards = async () => {
+    setIsLoadingCards(true);
+    try {
+      const response = await api.get('v2/bank/cards/');
+      setCards(response.data);
+    } catch (error) {
+      console.error("Failed to fetch cards:", error);
+    } finally {
+      setIsLoadingCards(false);
+    }
+  };
   
   // Transactions Data State
-  const [transactions, setTransactions] = useState([
-    { 
-      id: 1, 
-      type: 'Deposit', 
-      status: 'Completed', 
-      amount: 2100.00, 
-      date: new Date('2026-04-14T10:00:00'), 
-      icon: <ArrowDownCircle size={16}/>,
-      description: "Salary deposit from Acme Corp"
-    },
-    { 
-      id: 2, 
-      type: 'Transfer', 
-      status: 'Completed', 
-      amount: -450.00, 
-      date: new Date('2026-04-13T14:30:00'), 
-      icon: <Send size={16}/>,
-      description: "Transfer to Sarah Chen"
-    },
-    { 
-      id: 3, 
-      type: 'Withdrawal', 
-      status: 'Pending', 
-      amount: -120.00, 
-      date: new Date('2026-04-12T09:15:00'), 
-      icon: <ArrowUpCircle size={16}/>,
-      description: "ATM withdrawal - Downtown Branch"
-    },
-    { 
-      id: 4, 
-      type: 'Refund', 
-      status: 'Completed', 
-      amount: 45.00, 
-      date: new Date('2026-04-07T18:45:00'), 
-      icon: <ArrowDownCircle size={16}/>,
-      description: "Refund from Amazon"
-    },
-  ]);
+  const [transactions, setTransactions] = useState<any[]>([]);
 
   const [filterRange, setFilterRange] = useState('All');
 
   // Modal states
+  const [transactionType, setTransactionType] = useState<'DEPOSIT' | 'TRANSFER' | 'WITHDRAWAL'>('TRANSFER');
+  const [isTransactionLoading, setIsTransactionLoading] = useState(false);
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [sendForm, setSendForm] = useState({ recipient: '', amount: '', note: '' });
 
   const [isAddCardModalOpen, setIsAddCardModalOpen] = useState(false);
+  const [isCreatingCard, setIsCreatingCard] = useState(false);
   const [addCardForm, setAddCardForm] = useState({ number: '', expiry: '', cvv: '', name: '' });
 
   const [isTxDetailOpen, setIsTxDetailOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState<any>(null);
+
+  // Security View State (Moved up to prevent focus loss during typing)
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications] = useState([
@@ -123,46 +149,97 @@ const Dashboard = () => {
     });
   }, [transactions, filterRange]);
 
-  // --- SEND MONEY HANDLER ---
-  const handleSendMoney = (e: React.FormEvent) => {
+  // --- TRANSACTION HANDLER ---
+  const handleTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sendForm.recipient || !sendForm.amount) return;
+    if (!sendForm.amount) return;
+    if (transactionType === 'TRANSFER' && !sendForm.recipient) return;
 
     const amountNum = parseFloat(sendForm.amount);
-    if (amountNum <= 0 || amountNum > balance) {
+    
+    // Basic validation for withdrawals and transfers
+    if (transactionType !== 'DEPOSIT' && (amountNum <= 0 || amountNum > balance)) {
       alert("Invalid amount or insufficient balance!");
       return;
     }
 
-    // Create new transaction
-    const newTx = {
-      id: Date.now(),
-      type: 'Transfer',
-      status: 'Completed',
-      amount: -amountNum,
-      date: new Date(),
-      icon: <Send size={16} />,
-      description: `Transfer to ${sendForm.recipient}${sendForm.note ? ` - ${sendForm.note}` : ''}`
-    };
+    setIsTransactionLoading(true);
+    try {
+      const payload: any = {
+        transaction_type: transactionType,
+        amount: amountNum.toFixed(2),
+        description: sendForm.note || (transactionType === 'DEPOSIT' ? "Account Deposit" : transactionType === 'WITHDRAWAL' ? "Account Withdrawal" : `Transfer to ${sendForm.recipient}`)
+      };
 
-    setTransactions(prev => [newTx, ...prev]);
-    setBalance(prev => parseFloat((prev - amountNum).toFixed(2)));
+      if (transactionType === 'TRANSFER') {
+        payload.recipient_account_number = sendForm.recipient;
+      }
 
-    // Reset form and close modal
-    setSendForm({ recipient: '', amount: '', note: '' });
-    setIsSendModalOpen(false);
-    alert(`✅ $${amountNum} sent to ${sendForm.recipient} successfully!`);
+      await api.post('v2/bank/transactions/', payload);
+      
+      // Refresh the transaction list to show the new pending entry
+      fetchTransactions();
+
+      // Update persistence: Sync the balance in localStorage so it persists on refresh
+      const storedAccount = localStorage.getItem('user_account');
+      if (storedAccount) {
+        const parsed = JSON.parse(storedAccount);
+        const newBalance = transactionType === 'DEPOSIT' ? parseFloat(parsed.balance) + amountNum : parseFloat(parsed.balance) - amountNum;
+        parsed.balance = newBalance.toFixed(2);
+        localStorage.setItem('user_account', JSON.stringify(parsed));
+      }
+
+      // Update local state for immediate UI feedback
+      setBalance(prev => transactionType === 'DEPOSIT' ? prev + amountNum : prev - amountNum);
+      
+      alert(`✅ ${transactionType.charAt(0) + transactionType.slice(1).toLowerCase()} initiated successfully!`);
+      setIsSendModalOpen(false);
+      setSendForm({ recipient: '', amount: '', note: '' });
+    } catch (error: any) {
+      console.error("Transaction failed:", error);
+      alert(error.response?.data?.message || error.response?.data?.detail || "Transaction failed. Please try again.");
+    } finally {
+      setIsTransactionLoading(false);
+    }
   };
 
   // --- ADD CARD HANDLER ---
-  const handleAddCard = (e: React.FormEvent) => {
+  const handleAddCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addCardForm.number || !addCardForm.expiry) return;
     
-    setIsAddCardModalOpen(false);
-    setAddCardForm({ number: '', expiry: '', cvv: '', name: '' });
-    alert("✅ New card linked successfully! It will appear in your Cards section.");
-    // In a real app you would add to a cards array and re-render
+    setIsCreatingCard(true);
+    try {
+      // Format MM/YY to YYYY-MM-DD (Defaulting to the 1st of the month)
+      const parts = addCardForm.expiry.split('/');
+      if (parts.length < 2 || !parts[1]) {
+        throw new Error("Invalid expiry date format. Please use MM/YY.");
+      }
+
+      const month = parts[0].trim();
+      const year = parts[1].trim();
+      const formattedDate = `20${year}-${month.padStart(2, '0')}-01`;
+
+      const payload = {
+        card_number: addCardForm.number.replace(/\s/g, ''),
+        card_holder_name: addCardForm.name.toUpperCase(),
+        expiration_date: formattedDate,
+        cvv: addCardForm.cvv,
+        card_type: "CREDIT",
+        network: "VISA"
+      };
+
+      await api.post('v2/bank/cards/', payload);
+      alert("✅ New card issued successfully!");
+      setIsAddCardModalOpen(false);
+      setAddCardForm({ number: '', expiry: '', cvv: '', name: '' });
+      fetchCards(); // Refresh the list
+    } catch (error: any) {
+      console.error("Card creation failed:", error);
+      alert(error.response?.data?.message || error.response?.data?.detail || "Failed to create card.");
+    } finally {
+      setIsCreatingCard(false);
+    }
   };
 
   // --- SHARED COMPONENTS ---
@@ -280,9 +357,17 @@ const Dashboard = () => {
             View History <ArrowRightLeft size={14} />
           </button>
         </div>
-        <div className="space-y-4">
-          {transactions.slice(0, 3).map(tx => <TransactionRow key={tx.id} tx={tx} />)}
-        </div>
+        {isLoadingTransactions ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <div className="w-8 h-8 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-sm text-gray-400 font-medium">Syncing transactions...</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {transactions.slice(0, 3).map(tx => <TransactionRow key={tx.id} tx={tx} />)}
+            {transactions.length === 0 && <p className="text-center py-10 text-gray-400 text-sm">No recent activity found.</p>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -356,32 +441,41 @@ const Dashboard = () => {
           <Plus size={18}/> Add Card
         </button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Existing card */}
-        <div className="aspect-[1.6/1] bg-gradient-to-br from-[#0B1221] to-slate-800 p-8 rounded-[2.5rem] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden ring-1 ring-white/10">
-          <div className="flex justify-between items-start z-10">
-            <CreditCard size={32} className="text-[#D4AF37]"/>
-            <span className="text-[10px] tracking-[0.3em] font-bold text-[#D4AF37]">VALTRO PLATINUM</span>
-          </div>
-          <p className="text-2xl font-mono tracking-[0.25em] z-10">**** **** **** 9920</p>
-          <div className="flex justify-between text-[11px] uppercase text-gray-400 z-10 font-bold">
-            <span>Alex Valtro</span>
-            <span>Exp: 12/28</span>
-          </div>
-          <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-[#D4AF37]/5 rounded-full blur-3xl"></div>
+      {isLoadingCards ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <div className="w-10 h-10 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm text-gray-400 font-medium">Syncing your virtual cards...</p>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Real cards from API */}
+          {cards.map((card) => (
+            <div key={card.id} className="aspect-[1.6/1] bg-gradient-to-br from-[#0B1221] to-slate-800 p-8 rounded-[2.5rem] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden ring-1 ring-white/10">
+              <div className="flex justify-between items-start z-10">
+                <CreditCard size={32} className="text-[#D4AF37]"/>
+                <span className="text-[10px] tracking-[0.3em] font-bold text-[#D4AF37]">VALTRO {card.card_type}</span>
+              </div>
+              <p className="text-2xl font-mono tracking-[0.25em] z-10">{card.masked_number}</p>
+              <div className="flex justify-between text-[11px] uppercase text-gray-400 z-10 font-bold">
+                <span>{card.card_holder_name}</span>
+                <span>Exp: {card.expiration_date}</span>
+              </div>
+              <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-[#D4AF37]/5 rounded-full blur-3xl"></div>
+            </div>
+          ))}
 
-        {/* Add new card placeholder */}
-        <div 
-          onClick={() => setIsAddCardModalOpen(true)}
-          className="aspect-[1.6/1] border-2 border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center justify-center text-gray-400 gap-3 hover:border-[#D4AF37] hover:text-[#D4AF37] transition group cursor-pointer bg-white"
-        >
-          <div className="p-4 bg-gray-50 rounded-full group-hover:bg-[#D4AF37]/10 transition">
-            <Plus size={32} />
+          {/* Add new card placeholder */}
+          <div 
+            onClick={() => setIsAddCardModalOpen(true)}
+            className="aspect-[1.6/1] border-2 border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center justify-center text-gray-400 gap-3 hover:border-[#D4AF37] hover:text-[#D4AF37] transition group cursor-pointer bg-white"
+          >
+            <div className="p-4 bg-gray-50 rounded-full group-hover:bg-[#D4AF37]/10 transition">
+              <Plus size={32} />
+            </div>
+            <span className="font-bold text-sm tracking-wide">Issue New Card</span>
           </div>
-          <span className="font-bold text-sm tracking-wide">Link New Card</span>
         </div>
-      </div>
+      )}
     </div>
   );
 
@@ -410,9 +504,6 @@ const Dashboard = () => {
   );
 
   const SecurityView = () => {
-    const [showPassword, setShowPassword] = useState(false);
-    const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
-
     const handleChangePassword = (e: React.FormEvent) => {
       e.preventDefault();
       if (passwordForm.new !== passwordForm.confirm) {
@@ -509,22 +600,28 @@ const Dashboard = () => {
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999] p-4">
       <div className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-auto">
         <div className="p-6 border-b flex items-center justify-between">
-          <h3 className="font-bold text-2xl">Send Money</h3>
+          <h3 className="font-bold text-2xl">
+            {transactionType === 'TRANSFER' ? 'Send Money' : 
+             transactionType === 'DEPOSIT' ? 'Deposit Funds' : 'Withdraw Funds'}
+          </h3>
           <button onClick={() => setIsSendModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-2xl"><X size={24}/></button>
         </div>
         
-        <form onSubmit={handleSendMoney} className="p-6 space-y-8">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest text-gray-500 block mb-2">Recipient Email or Phone</label>
-            <input 
-              type="text"
-              value={sendForm.recipient}
-              onChange={(e) => setSendForm({...sendForm, recipient: e.target.value})}
-              className="w-full px-6 py-5 border border-gray-200 focus:border-[#D4AF37] rounded-3xl text-lg outline-none"
-              placeholder="sarah@email.com or +1 (555) 123-4567"
-              required
-            />
-          </div>
+        <form onSubmit={handleTransaction} className="p-6 space-y-8">
+          {transactionType === 'TRANSFER' && (
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-gray-500 block mb-2">Recipient Account Number</label>
+              <input 
+                type="text"
+                value={sendForm.recipient}
+                onChange={(e) => setSendForm({...sendForm, recipient: e.target.value})}
+                className="w-full px-6 py-5 border border-gray-200 focus:border-[#D4AF37] rounded-3xl text-lg outline-none"
+                placeholder="Enter destination account"
+                required
+                disabled={isTransactionLoading}
+              />
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-bold uppercase tracking-widest text-gray-500 block mb-2">Amount</label>
@@ -538,6 +635,7 @@ const Dashboard = () => {
                 placeholder="0.00"
                 step="0.01"
                 required
+                disabled={isTransactionLoading}
               />
             </div>
           </div>
@@ -549,6 +647,7 @@ const Dashboard = () => {
               onChange={(e) => setSendForm({...sendForm, note: e.target.value})}
               className="w-full px-6 py-5 border border-gray-200 focus:border-[#D4AF37] rounded-3xl h-28 resize-none outline-none"
               placeholder="For dinner last night..."
+              disabled={isTransactionLoading}
             />
           </div>
 
@@ -557,14 +656,16 @@ const Dashboard = () => {
               type="button"
               onClick={() => setIsSendModalOpen(false)}
               className="flex-1 py-6 text-gray-400 font-bold border border-gray-200 rounded-3xl"
+              disabled={isTransactionLoading}
             >
               CANCEL
             </button>
             <button 
               type="submit"
-              className="flex-1 py-6 bg-[#D4AF37] text-black font-bold rounded-3xl hover:bg-[#f5cc45] transition"
+              disabled={isTransactionLoading}
+              className="flex-1 py-6 bg-[#D4AF37] text-black font-bold rounded-3xl hover:bg-[#f5cc45] transition disabled:opacity-50"
             >
-              SEND NOW
+              {isTransactionLoading ? 'PROCESSING...' : (transactionType === 'TRANSFER' ? 'SEND NOW' : 'CONFIRM')}
             </button>
           </div>
         </form>
@@ -591,6 +692,7 @@ const Dashboard = () => {
               placeholder="4242 4242 4242 4242"
               maxLength={19}
               required
+              disabled={isCreatingCard}
             />
           </div>
 
@@ -605,6 +707,7 @@ const Dashboard = () => {
                 placeholder="MM / YY"
                 maxLength={5}
                 required
+                disabled={isCreatingCard}
               />
             </div>
             <div>
@@ -617,6 +720,7 @@ const Dashboard = () => {
                 placeholder="123"
                 maxLength={4}
                 required
+                disabled={isCreatingCard}
               />
             </div>
           </div>
@@ -630,14 +734,16 @@ const Dashboard = () => {
               className="w-full px-6 py-5 border border-gray-200 focus:border-[#D4AF37] rounded-3xl text-lg outline-none"
               placeholder="Alex Valtro"
               required
+              disabled={isCreatingCard}
             />
           </div>
 
           <button 
             type="submit"
-            className="w-full bg-[#0B1221] text-white py-6 rounded-3xl font-bold text-lg tracking-wider hover:bg-black transition mt-4"
+            disabled={isCreatingCard}
+            className="w-full bg-[#0B1221] text-white py-6 rounded-3xl font-bold text-lg tracking-wider hover:bg-black transition mt-4 disabled:opacity-50"
           >
-            LINK CARD
+            {isCreatingCard ? 'ISSUING CARD...' : 'LINK CARD'}
           </button>
         </form>
       </div>
@@ -793,31 +899,45 @@ const Dashboard = () => {
               )}
             </button>
 
-            {/* Send Money */}
-            <button 
-              onClick={() => setIsSendModalOpen(true)}
-              className="bg-[#0B1221] text-white px-5 lg:px-7 py-2.5 rounded-2xl text-xs lg:text-sm font-bold hover:bg-slate-800 transition shadow-lg shadow-black/10 flex items-center gap-2"
-            >
-              <Send size={18} /> Send Money
-            </button>
+            {/* Action Buttons */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button 
+                onClick={() => { setTransactionType('DEPOSIT'); setIsSendModalOpen(true); }}
+                className="bg-green-600 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold hover:bg-green-700 transition shadow-sm whitespace-nowrap"
+              >
+                Deposit
+              </button>
+              <button 
+                onClick={() => { setTransactionType('WITHDRAWAL'); setIsSendModalOpen(true); }}
+                className="bg-amber-600 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold hover:bg-amber-700 transition shadow-sm whitespace-nowrap"
+              >
+                Withdraw
+              </button>
+              <button 
+                onClick={() => { setTransactionType('TRANSFER'); setIsSendModalOpen(true); }}
+                className="bg-[#0B1221] text-white px-3 sm:px-5 lg:px-7 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs lg:text-sm font-bold hover:bg-slate-800 transition shadow-lg shadow-black/10 flex items-center gap-1 sm:gap-2 whitespace-nowrap"
+              >
+                <Send className="w-3.5 h-3.5 sm:w-[18px] sm:h-[18px]" /> Send
+              </button>
+            </div>
           </div>
         </header>
 
         {/* CONTENT AREA */}
         <div className="p-5 lg:p-10 max-w-[1400px] mx-auto w-full overflow-y-auto custom-scrollbar h-[calc(100vh-5rem)]">
-          {currentView === 'dashboard' && <MainDashboard />}
-          {currentView === 'transactions' && <TransactionView />}
-          {currentView === 'cards' && <CardsView />}
-          {currentView === 'profile' && <ProfileView />}
-          {currentView === 'security' && <SecurityView />}
+          {currentView === 'dashboard' && MainDashboard()}
+          {currentView === 'transactions' && TransactionView()}
+          {currentView === 'cards' && CardsView()}
+          {currentView === 'profile' && ProfileView()}
+          {currentView === 'security' && SecurityView()}
         </div>
       </main>
 
-      {/* MODALS */}
-      {isSendModalOpen && <SendMoneyModal />}
-      {isAddCardModalOpen && <AddCardModal />}
-      {isTxDetailOpen && <TransactionDetailModal />}
-      {isNotificationsOpen && <NotificationsModal />}
+      {/* MODALS (Rendered as functions to preserve input focus) */}
+      {isSendModalOpen && SendMoneyModal()}
+      {isAddCardModalOpen && AddCardModal()}
+      {isTxDetailOpen && TransactionDetailModal()}
+      {isNotificationsOpen && NotificationsModal()}
     </div>
   );
 };
