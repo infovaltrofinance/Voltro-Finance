@@ -1,4 +1,5 @@
 "use client"
+import { useRouter } from 'next/navigation';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LayoutDashboard, Send, ArrowDownCircle, ArrowUpCircle, 
@@ -15,6 +16,7 @@ const Dashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [balance, setBalance] = useState(12450.00);
   const [isMounted, setIsMounted] = useState(false);
+  const router = useRouter();
   const [userAccount, setUserAccount] = useState<any>(null);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [cards, setCards] = useState<any[]>([]);
@@ -25,7 +27,7 @@ const Dashboard = () => {
     // Check if user is logged in
     const accessToken = localStorage.getItem('access_token');
     if (!accessToken) {
-      window.location.href = '/';
+      router.replace('/');
       return;
     }
 
@@ -616,7 +618,7 @@ const Dashboard = () => {
                 value={sendForm.recipient}
                 onChange={(e) => setSendForm({...sendForm, recipient: e.target.value})}
                 className="w-full px-6 py-5 border border-gray-200 focus:border-[#D4AF37] rounded-3xl text-lg outline-none"
-                placeholder="Enter destination account"
+                placeholder="000 000 0000"
                 required
                 disabled={isTransactionLoading}
               />
@@ -833,6 +835,9 @@ const Dashboard = () => {
       </div>
     </div>
   );
+
+  // Prevent rendering protected content until the auth check is performed on the client
+  if (!isMounted) return null;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex text-slate-800 font-sans">
