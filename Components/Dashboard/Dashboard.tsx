@@ -37,8 +37,10 @@ const Dashboard = () => {
     const storedAccount = localStorage.getItem('user_account');
     if (storedAccount) {
       const parsed = JSON.parse(storedAccount);
-      setUserAccount(parsed);
-      setBalance(parseFloat(parsed.balance));
+      if (parsed && typeof parsed === 'object') { // Safety check for parsed object
+        setUserAccount(parsed);
+        setBalance(parseFloat(parsed.balance || '0')); // Handle potentially missing balance
+      }
     }
 
     fetchTransactions();
@@ -247,7 +249,7 @@ const Dashboard = () => {
   // --- SHARED COMPONENTS ---
   const NavItem = ({ icon, label, id }: { icon: React.ReactNode; label: string; id: string }) => (
     <button 
-      onClick={() => { 
+      onClick={() => {
         setCurrentView(id); 
         setIsSidebarOpen(false); 
       }}
@@ -353,7 +355,7 @@ const Dashboard = () => {
         <div className="flex justify-between items-center mb-6">
           <h4 className="font-bold">Quick Activity</h4>
           <button 
-            onClick={() => setCurrentView('transactions')} 
+            onClick={() => setCurrentView('transfer')} 
             className="text-[#D4AF37] text-sm font-bold flex items-center gap-1 hover:underline"
           >
             View History <ArrowRightLeft size={14} />
@@ -431,6 +433,122 @@ const Dashboard = () => {
       </div>
     </div>
   );
+
+  const TypedTransactionView = ({ 
+    type, 
+    title, 
+    description, 
+    icon: ActionIcon 
+  }: { 
+    type: 'DEPOSIT' | 'TRANSFER' | 'WITHDRAWAL', 
+    title: string, 
+    description: string,
+    icon: any
+  }) => {
+    const filteredTypedTransactions = useMemo(() => {
+      const now = new Date();
+      return transactions.filter(tx => {
+        const matchesType = tx.type.toUpperCase() === type;
+        if (!matchesType) return false;
+
+        if (filterRange === 'Today') return tx.date.toDateString() === now.toDateString();
+        if (filterRange === 'Yesterday') {
+          const yesterday = new Date(now);
+          yesterday.setDate(now.getDate() - 1);
+          return tx.date.toDateString() === yesterday.toDateString();
+        }
+        if (filterRange === '7Days') return (now.getTime() - tx.date.getTime()) <= 7 * 86400000;
+        return true;
+      });
+    }, [transactions, filterRange, type]);
+
+    return (
+      <div className="bg-white p-6 lg:p-8 rounded-[2rem] border border-gray-100 animate-in slide-in-from-bottom-4 duration-500">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-[#D4AF37]/10 rounded-2xl text-[#D4AF37]">
+              <ActionIcon size={24} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold">{title}</h2>
+              <p className="text-sm text-gray-400">{description}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => { setTransactionType(type); setIsSendModalOpen(true); }}
+              className="bg-[#0B1221] text-white px-6 py-3 rounded-2xl flex items-center gap-2 text-sm font-bold shadow-lg shadow-black/10 hover:bg-slate-800 transition"
+            >
+              <Plus size={18}/> New {title.slice(0, -1)}
+            </button>
+            <div className="hidden sm:flex bg-gray-50 p-1 rounded-xl border border-gray-100">
+              {['All', '7Days'].map(range => (
+                <button 
+                  key={range}
+                  onClick={() => setFilterRange(range)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition ${filterRange === range ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-black'}`}
+                >
+                  {range === '7Days' ? 'Recent' : 'All Time'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {isLoadingTransactions ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="w-8 h-8 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-sm text-gray-400 font-medium">Loading {title.toLowerCase()}...</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-gray-400 text-[10px] uppercase tracking-widest border-b border-gray-50">
+                  <th className="pb-4 font-bold">Details</th>
+                  <th className="pb-4 font-bold">Date</th>
+                  <th className="pb-4 font-bold">Status</th>
+                  <th className="pb-4 font-bold text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredTypedTransactions.map(tx => (
+                  <tr 
+                    key={tx.id} 
+                    onClick={() => {
+                      setSelectedTx(tx);
+                      setIsTxDetailOpen(true);
+                    }}
+                    className="group hover:bg-gray-50 transition cursor-pointer"
+                  >
+                    <td className="py-5 flex items-center gap-4">
+                      <div className={`p-2.5 rounded-xl ${tx.amount > 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{tx.icon}</div>
+                      <span className="font-bold text-sm text-slate-700 truncate max-w-[150px]">{tx.description}</span>
+                    </td>
+                    <td className="py-5 text-sm text-gray-500 font-medium">
+                      {isMounted ? tx.date.toLocaleDateString() : ''}
+                    </td>
+                    <td className="py-5"><span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${tx.status === 'Completed' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>{tx.status}</span></td>
+                    <td className={`py-5 text-right font-bold ${tx.amount > 0 ? 'text-green-600' : 'text-slate-900'}`}>
+                      {tx.amount > 0 ? '+' : ''}{isMounted ? tx.amount.toLocaleString(undefined, {style:'currency', currency:'USD'}) : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredTypedTransactions.length === 0 && (
+              <div className="text-center py-20">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-50 text-gray-300 mb-4">
+                  <History size={32} />
+                </div>
+                <p className="text-gray-400 font-medium">No {title.toLowerCase()} recorded yet.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const CardsView = () => (
     <div className="space-y-8 animate-in fade-in">
@@ -855,7 +973,9 @@ const Dashboard = () => {
         
         <nav className="flex-1 px-6 space-y-1.5 mt-4">
           <NavItem icon={<LayoutDashboard size={20}/>} label="Dashboard" id="dashboard" />
-          <NavItem icon={<ArrowRightLeft size={20}/>} label="Transactions" id="transactions" />
+          <NavItem icon={<ArrowDownCircle size={20}/>} label="Deposits" id="deposit" />
+          <NavItem icon={<ArrowUpCircle size={20}/>} label="Withdrawals" id="withdrawal" />
+          <NavItem icon={<Send size={20}/>} label="Transfers" id="transfer" />
           <NavItem icon={<CreditCard size={20}/>} label="My Cards" id="cards" />
           <NavItem icon={<User size={20}/>} label="Profile" id="profile" />
           <NavItem icon={<Settings size={20}/>} label="Security" id="security" />
@@ -904,34 +1024,15 @@ const Dashboard = () => {
               )}
             </button>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <button 
-                onClick={() => { setTransactionType('DEPOSIT'); setIsSendModalOpen(true); }}
-                className="bg-green-600 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold hover:bg-green-700 transition shadow-sm whitespace-nowrap"
-              >
-                Deposit
-              </button>
-              <button 
-                onClick={() => { setTransactionType('WITHDRAWAL'); setIsSendModalOpen(true); }}
-                className="bg-amber-600 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-bold hover:bg-amber-700 transition shadow-sm whitespace-nowrap"
-              >
-                Withdraw
-              </button>
-              <button 
-                onClick={() => { setTransactionType('TRANSFER'); setIsSendModalOpen(true); }}
-                className="bg-[#0B1221] text-white px-3 sm:px-5 lg:px-7 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs lg:text-sm font-bold hover:bg-slate-800 transition shadow-lg shadow-black/10 flex items-center gap-1 sm:gap-2 whitespace-nowrap"
-              >
-                <Send className="w-3.5 h-3.5 sm:w-[18px] sm:h-[18px]" /> Send
-              </button>
-            </div>
           </div>
         </header>
 
         {/* CONTENT AREA */}
         <div className="p-5 lg:p-10 max-w-[1400px] mx-auto w-full overflow-y-auto custom-scrollbar h-[calc(100vh-5rem)]">
           {currentView === 'dashboard' && MainDashboard()}
-          {currentView === 'transactions' && TransactionView()}
+          {currentView === 'deposit' && <TypedTransactionView type="DEPOSIT" title="Deposits" description="Funds added to your account" icon={ArrowDownCircle} />}
+          {currentView === 'withdrawal' && <TypedTransactionView type="WITHDRAWAL" title="Withdrawals" description="Funds removed from your account" icon={ArrowUpCircle} />}
+          {currentView === 'transfer' && <TypedTransactionView type="TRANSFER" title="Transfers" description="Funds sent to other accounts" icon={Send} />}
           {currentView === 'cards' && CardsView()}
           {currentView === 'profile' && ProfileView()}
           {currentView === 'security' && SecurityView()}
